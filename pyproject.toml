@@ -1,0 +1,10 @@
+[project]
+name = "rh-netbird-extend"
+version = "0.1.0"
+description = "Extend NetBird VPN sessions via the CLI"
+requires-python = ">=3.11"
+dependencies = ["requests"]
+license = "MIT"
+
+[project.scripts]
+rh-netbird-extend = "rh_netbird_extend:main"
