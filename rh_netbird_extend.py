@@ -17,14 +17,13 @@ Reads the SSO password from stdin, or prompts interactively:
 
 import argparse
 import getpass
+import json
 import os
 import subprocess
 import sys
 from html.parser import HTMLParser
 
 import requests
-
-DEFAULT_MANAGEMENT_URL = "https://example.org:443"
 
 
 class FormParser(HTMLParser):
@@ -73,14 +72,20 @@ def read_password():
     return sys.stdin.readline().rstrip("\n")
 
 
-def check_tunnel():
-    """Verify the NetBird tunnel is up before attempting to extend."""
+def get_status():
+    """Return the parsed 'netbird status --json' output."""
     result = subprocess.run(
-        ["netbird", "status"], capture_output=True, text=True,
+        ["netbird", "status", "--json"], capture_output=True, text=True,
     )
     if result.returncode != 0:
         die("cannot reach the netbird daemon (is the service running?)")
-    if "Disconnected" in result.stdout.split("Management:")[1].split("\n")[0]:
+    return json.loads(result.stdout)
+
+
+def check_tunnel(status):
+    """Verify the NetBird tunnel is up before attempting to extend."""
+    mgmt = status.get("management", {})
+    if not mgmt.get("connected"):
         die("tunnel is not connected; run 'netbird up' or connect via the GUI first")
 
 
@@ -167,22 +172,19 @@ def main():
         default=os.environ.get("RH_NETBIRD_USERNAME"),
         help="Red Hat Kerberos ID (e.g. jdoe) [env: RH_NETBIRD_USERNAME]",
     )
-    ap.add_argument(
-        "--management-url",
-        default=os.environ.get("RH_NETBIRD_MANAGEMENT_URL", DEFAULT_MANAGEMENT_URL),
-        help=f"NetBird management URL [env: RH_NETBIRD_MANAGEMENT_URL] (default: {DEFAULT_MANAGEMENT_URL})",
-    )
     args = ap.parse_args()
 
     if not args.username:
         ap.error("--username is required (or set RH_NETBIRD_USERNAME)")
 
-    check_tunnel()
+    status = get_status()
+    check_tunnel(status)
+    management_url = status["management"]["url"]
 
     password = read_password()
     if not password:
         ap.error("no password provided")
-    proc, auth_url = start_netbird_login(args.management_url)
+    proc, auth_url = start_netbird_login(management_url)
     try:
         sso_authenticate(auth_url, args.username, password)
     finally:
